@@ -1,0 +1,56 @@
+CREATE OR REPLACE FUNCTION sp_abm_tablas(
+    tabla character varying,
+    op character varying,
+    datos character varying)
+  RETURNS void AS
+$BODY$
+	declare
+		campos varchar[];
+		CAMPOS_L integer;
+		contador integer;
+		acumsql varchar;
+		valor varchar;
+	begin
+		select array_agg(column_name::varchar) into campos from information_schema.columns WHERE table_schema='public' and table_name = tabla;
+		case op 
+		-- insert
+		/** 
+			Para realizar insert en tablas
+			select sp_abm_tablas('tablename', 'insert',' {integer value}, ''{varchar value}''');
+		*/
+		when 'insert' then
+			execute 'insert into '|| tabla || ' ('|| array_to_string(campos, ', ') ||') values ((select coalesce(max('||campos[1] ||'),0)+1 from '|| tabla ||'), '|| datos ||')';
+			raise notice 'Datos insertados en la tabla: %', tabla;
+		-- update
+		/** 
+			Para realizar update en tablas
+			select sp_abm_tablas('tablename', 'update',' {integer pk value}, ''{varchar value}''');
+		*/ 
+		when 'update' then
+			contador = 2;
+			CAMPOS_L = array_length((string_to_array(datos, ', ')), 1);
+			while contador <= CAMPOS_L loop
+				valor = trim(split_part(datos, ',', contador));
+				acumsql = concat(acumsql, campos[contador] || ' = ' || valor);
+				if contador < CAMPOS_L then
+					acumsql = concat(acumsql, ', ');
+				end if;				
+				contador = contador + 1;
+			end loop;			
+			execute 'update '|| tabla ||' set '|| acumsql ||' where '||campos[1]||  ' = ' || trim(split_part(datos, ',', 1));
+			raise notice 'Se ha modificado correctamente';
+		-- delete 
+		/** 
+			Para realizar delete en tablas
+			select sp_abm_tablas('tablename', 'delete',' {integer pk value}');
+		*/
+		when  'delete' then
+			execute 'delete from '|| tabla ||' where ' || campos[1] ||' = '|| datos;
+			raise notice 'Se ha eliminado correctamente';
+		else
+			raise exception 'No se ha elegido ninguna operacion';
+		end case; 
+	end;
+$BODY$
+  LANGUAGE plpgsql VOLATILE
+  COST 100;
